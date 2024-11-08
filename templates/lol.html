@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="/static/style.css">
+    <title>Space Blow - Live Space Data</title>
+    
+</head>
+<body>
+
+    <div class="lines1">
+        <div><span class="data-label">Right Ascension (Apparent): </span><span id="raApparent">Loading...</span></div>
+        <div><span class="data-label">Declination (Apparent): </span><span id="decApparent">Loading...</span></div>
+        <div><span class="data-label">Hour Angle: </span><span id="hourAngle">Loading...</span></div>
+        <div><span class="data-label">Sidereal Time: </span><span id="siderealTime">Loading...</span></div>
+        <div><span class="data-label">Distance (Km): </span><span id="distanceKm">Loading...</span></div>
+        <div><span class="data-label">Distance (AU): </span><span id="distanceAU">Loading...</span></div>
+        <div><span class="data-label">Light Travel Time: </span><span id="lightTravelTime">Loading...</span></div>
+        <div><span class="data-label">Azimuth: </span><span id="localAzimuth">Loading...</span></div>
+        <div><span class="data-label">Max Altitude: </span><span id="localAltitude">Loading...</span></div>
+    </div>
+
+    <div class="lines1"> 
+        <h1>Voyager Instrument Status</h1>
+        <table border="1">
+            <tr>
+                <th>Instrument</th>
+                <th>Voyager 1 Status</th>
+                <th>Voyager 2 Status</th>
+            </tr>
+            {% for instrument in instruments %}
+            <tr>
+                <td>{{ instrument['Instrument'] }}</td>
+                <td>{{ instrument['Voyager 1 Status'] }}</td>
+                <td>{{ instrument['Voyager 2 Status'] }}</td>
+            </tr>
+            {% endfor %}
+        </table>
+
+    </div>
+
+    <script>
+        // JavaScript code to update live space data
+        const kmFormatter = new Intl.NumberFormat('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+        const auFormatter = new Intl.NumberFormat('en-US', { minimumFractionDigits: 10, maximumFractionDigits: 10 });
+        const lightSpeed = 299792.458; // Speed of light in km/s
+        const au2km = 149597870.7;
+        const raw = {"day0":20016,"x":[-3,-2,-1,0,1,2,3],"ar":[17.233888888888888,17.234166666666667,17.234444444444446,17.234722222222224,17.235,17.235277777777778,17.235555555555557],"dec":[12.125,12.121944444444445,12.11888888888889,12.116111111111111,12.113055555555555,12.110277777777778,12.1075],"de":[24749613571,24752715535,24755795089,24758851765,24761885082,24764894554,24767879686]};
+
+        let observerLatitudeDegrees = 51.48;
+        let observerLongitudeDegrees = 0;
+
+        function formatSeconds(t) {
+            const hours = Math.floor(t / 3600);
+            const minutes = Math.floor((t % 3600) / 60);
+            const seconds = (t % 60).toFixed(3);
+            return `${hours}h ${minutes}m ${seconds}s`;
+        }
+
+        function decimalHourToHMS(decimalHour) {
+            const hours = Math.floor(decimalHour);
+            const minutes = Math.floor((decimalHour - hours) * 60);
+            const seconds = Math.round(((decimalHour - hours) * 60 - minutes) * 60);
+            return `${hours}h ${minutes}m ${seconds}s`;
+        }
+
+        function guiUpdater() {
+            const t = new Date().getTime();
+            const x = (t / 1000 - 86400 * raw.day0) / 86400;
+            const distance = interpolate(x, raw.x, raw.de);
+            const raApparent = interpolate(x, raw.x, raw.ar);
+            const decApparent = interpolate(x, raw.x, raw.dec);
+            
+            const localSiderealTime = getLocalSiderealTime(observerLongitudeDegrees);
+            const hourAngle = (localSiderealTime - raApparent + 24) % 24; // Ensure value is within 0-24
+
+            document.getElementById('distanceKm').textContent = kmFormatter.format(distance);
+            document.getElementById('distanceAU').textContent = auFormatter.format(distance / au2km);
+            document.getElementById('lightTravelTime').textContent = formatSeconds(distance / lightSpeed);
+            document.getElementById('raApparent').textContent = decimalHourToHMS(raApparent);
+            document.getElementById('decApparent').textContent = decApparent.toFixed(2) + "°";
+            document.getElementById('hourAngle').textContent = decimalHourToHMS(hourAngle);
+            document.getElementById('siderealTime').textContent = decimalHourToHMS(localSiderealTime);
+
+            const azimuth = getAzimuth(observerLatitudeDegrees, observerLongitudeDegrees);
+            const altitude = getAltitude(observerLatitudeDegrees, observerLongitudeDegrees);
+
+            document.getElementById('localAzimuth').textContent = azimuth.toFixed(2) + "°";
+            document.getElementById('localAltitude').textContent = altitude.toFixed(2) + "°";
+        }
+
+        function interpolate(x, xv, yv) {
+            let i = 1;
+            while (i < xv.length && xv[i] < x) i++;
+            const x1 = xv[i - 1], x2 = xv[i];
+            const y1 = yv[i - 1], y2 = yv[i];
+            return y1 + ((y2 - y1) * (x - x1)) / (x2 - x1);
+        }
+
+        function getLocalSiderealTime(longitude) {
+            const now = new Date();
+            const jd = (now.getTime() / 86400000.0) + 2440587.5;
+            const t = (jd - 2451545.0) / 36525.0;
+            const gst = 6.697374558 + (2400.051336 * t) + (0.000025862 * t * t);
+            const lst = (gst + longitude / 15.0) % 24;
+            return lst < 0 ? lst + 24 : lst;
+        }
+
+        function getAzimuth(lat, lon) {
+            return (180 + lat - lon) % 360;
+        }
+
+        function getAltitude(lat, lon) {
+            return 90 - Math.abs(lat - lon);
+        }
+
+        setInterval(guiUpdater, 1000); // Update every second
+    </script>
+
+    
+</body>
+</html>
